@@ -32,11 +32,11 @@
         socket.on('server:location-update', (data) => {
             const { id, lat, lng} = data
             if(!remoteMarkers.has(id)) {
-                const marker = L.market([lat,lng]).addTo(map).bindPopup(id)
+                const marker = L.marker([lat,lng]).addTo(map).bindPopup(id)
                 remoteMarkers.set(id,marker)
             } else {
                  const existingMarker = remoteMarkers.get(id)
-                 existingMarker.setLatLng([lat, lng]); // this line is not updating UI
+                 existingMarker.setLatLng([lat, lng]); 
             }
         })
 
@@ -45,60 +45,45 @@
              attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         }).addTo(map);
 
-        function getUserCurrentLocation () {
-            return new Promise((res,rej) => {
 
-                 if ("geolocation" in navigator) {
-                // Request user location
-                navigator.geolocation.getCurrentPosition (
-                     (position) => {
-                    // Success callback: Access latitude and longitude
-                        console.log(`Got user's location`, position)
-                        const lat = position.coords.latitude
-                        const lng = position.coords.longitude
-                        res({lat, lng})
-                        //console.log(`Latitude: ${lat}, Longitude: ${lng}`);
-                     }, 
-                    (error) => {
-                          rej(error)
-                    },
-                    { enableHighAccuracy: true}                     
-                )
+         let myCurrentLocationMarker = null
 
-            } else {
-                alert('Geolocation is Not Available in this Browser')
-            }
+         // Tracker for YOUR own location
+    function startTracking() {
+        if ("geolocation" in navigator) {
+            // FIX 2: Use watchPosition for smoother real-time updates
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const { latitude: lat, longitude: lng } = position.coords;
 
-            })
-            
-           
+                    // Send to server
+                    socket.emit('client:location:update', { lat, lng });
+
+                    // Update your own marker on the UI
+                    if (!myCurrentLocationMarker) {
+                        myCurrentLocationMarker = L.marker([lat, lng]).addTo(map).bindPopup("You're Here");
+                        map.setView([lat, lng], 15); // Only centers the VERY FIRST time
+                    } else {
+                        myCurrentLocationMarker.setLatLng([lat, lng]);
+                        
+                    }
+                },
+                (error) => console.error("Error getting location:", error),
+                { enableHighAccuracy: true, maximumAge: 0 }
+            );
+        } else {
+            alert('Geolocation not supported');
         }
+    }
 
-        let myCurrentLocationMarker = null
-        
-        async function main() {
-            setInterval( async() => {
-                const {lat,lng} = await getUserCurrentLocation()
+window.addEventListener('load', startTracking);
 
-                socket.emit('client:location:update', { lat,lng })
-
-                if(!myCurrentLocationMarker) {
-                    myCurrentLocationMarker = L.marker([lat, lng])
-                                                .addTo(map)
-                                                .bindPopup("You're Here")
-                } else {
-                    myCurrentLocationMarker.setLatLng( [ lat, lng ] )
-                }
-            }, 10 *1000 )                      
-            
-        }
-
-        window.addEventListener('load', main)
-
-       
-
-
-
+socket.on('server:user-disconnected', (id) => {
+    if (remoteMarkers.has(id)) {
+        map.removeLayer(remoteMarkers.get(id));
+        remoteMarkers.delete(id);
+    }
+})
 
 
 

@@ -58,6 +58,10 @@ async function main() {
                 ]
             })
         })
+        socket.on('disconnect', () => {
+            console.log(`[Socket:${socket.id}]: Disconnected`);
+            io.emit('server:user-disconnected', socket.id);
+        })
     })
 
 
