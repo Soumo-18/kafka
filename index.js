@@ -4,12 +4,37 @@ import path from 'node:path'
 import express from 'express'
 import { Server } from 'socket.io'
 
+import { kafkaClient } from './kafka-client.js'
+
 async function main() {
     const PORT = process.env.PORT ?? 8000
 
     const app = express()
     const server = http.createServer(app)
     const io = new Server (server)
+
+    const kafkaProducer = kafkaClient.producer()
+    await kafkaProducer.connect()
+
+    const kafkaConsumer = kafkaClient.consumer({ groupId:`scoket-server-${PORT}`})
+    await kafkaConsumer.connect()
+
+    await kafkaConsumer.subscribe({ 
+        topics:['location-updates'],
+         fromBeginning:true 
+    })
+    kafkaConsumer.run({
+        eachMessage: async ({ topic, partition, message, heartbeat}) => {   //whenever we get a msg this callback func will run
+            const data = JSON.parse(message.value.toString())
+            console.log(`Kafka Consumer Data Received`, { data })
+            io.emit('server:location-update', {
+                id: data.id,
+                 lat:data.lat,
+                  lng:data.lng 
+            } )
+            await heartbeat()
+        },
+    })
 
     io.attach(server)
 
@@ -23,6 +48,15 @@ async function main() {
                 `[Socket:${socket.id}]:client:location:update: `,
                  locationData
             )
+
+            await kafkaProducer.send({ topic:'location-updates', 
+                messages:[
+                    {
+                        key:socket.id,
+                        value:JSON.stringify({id: socket.id, lat, lng })
+                    }
+                ]
+            })
         })
     })
 
